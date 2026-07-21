@@ -1,0 +1,166 @@
+import { lazy, Suspense, type ReactNode, useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useApp, useCurrentPermissions, canAccess } from '@/store/appStore';
+import { AppLayout } from '@/components/layout/AppLayout';
+import { PageSkeleton } from '@/components/ui/Skeleton';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { pageTransition } from '@/animations';
+import type { ModuleKey } from '@/types';
+
+const Login = lazy(() => import('@/pages/Login'));
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const Reservations = lazy(() => import('@/pages/Reservations'));
+const Ventes = lazy(() => import('@/pages/Ventes'));
+const Achats = lazy(() => import('@/pages/Achats'));
+const Chambres = lazy(() => import('@/pages/Chambres'));
+const Services = lazy(() => import('@/pages/Services'));
+const Clients = lazy(() => import('@/pages/Clients'));
+const Mediateurs = lazy(() => import('@/pages/Mediateurs'));
+const Workers = lazy(() => import('@/pages/Workers'));
+const Expenses = lazy(() => import('@/pages/Expenses'));
+const Caisse = lazy(() => import('@/pages/Caisse'));
+const Reports = lazy(() => import('@/pages/Reports'));
+const Settings = lazy(() => import('@/pages/Settings'));
+
+// Preload all pages to avoid white-screen delays on first navigation
+const preload = () => {
+  import('@/pages/Dashboard');
+  import('@/pages/Reservations');
+  import('@/pages/Ventes');
+  import('@/pages/Achats');
+  import('@/pages/Chambres');
+  import('@/pages/Clients');
+  import('@/pages/Mediateurs');
+  import('@/pages/Workers');
+  import('@/pages/Services');
+  import('@/pages/Expenses');
+  import('@/pages/Caisse');
+  import('@/pages/Reports');
+  import('@/pages/Settings');
+};
+
+function PageShell({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  return (
+    <motion.div variants={pageTransition} initial="initial" animate="animate" exit="exit">
+      {/* key on Suspense forces remount on route change, preventing stale content flashes */}
+      <Suspense key={location.pathname} fallback={<PageSkeleton />}>
+        {children}
+      </Suspense>
+    </motion.div>
+  );
+}
+
+function RequireModule({ module, children }: { module: ModuleKey; children: ReactNode }) {
+  const perms = useCurrentPermissions();
+  if (!canAccess(perms, module)) return <Navigate to="/app/dashboard" replace />;
+  return <>{children}</>;
+}
+
+function AppRoutes() {
+  const location = useLocation();
+  return (
+    <AnimatePresence mode="wait">
+      <Routes location={location} key={location.pathname}>
+        <Route path="dashboard" element={<PageShell><Dashboard /></PageShell>} />
+        <Route
+          path="reservations"
+          element={<PageShell><RequireModule module="reservations"><Reservations /></RequireModule></PageShell>}
+        />
+        <Route
+          path="ventes"
+          element={<PageShell><RequireModule module="ventes"><Ventes /></RequireModule></PageShell>}
+        />
+        <Route
+          path="achats"
+          element={<PageShell><RequireModule module="achats"><Achats /></RequireModule></PageShell>}
+        />
+        <Route
+          path="chambres"
+          element={<PageShell><RequireModule module="chambres"><Chambres /></RequireModule></PageShell>}
+        />
+        <Route
+          path="services"
+          element={<PageShell><RequireModule module="services"><Services /></RequireModule></PageShell>}
+        />
+        <Route
+          path="clients"
+          element={<PageShell><RequireModule module="clients"><Clients /></RequireModule></PageShell>}
+        />
+        <Route
+          path="mediators"
+          element={<PageShell><RequireModule module="mediators"><Mediateurs /></RequireModule></PageShell>}
+        />
+        <Route
+          path="workers"
+          element={<PageShell><RequireModule module="workers"><Workers /></RequireModule></PageShell>}
+        />
+        <Route
+          path="expenses"
+          element={<PageShell><RequireModule module="expenses"><Expenses /></RequireModule></PageShell>}
+        />
+        <Route
+          path="caisse"
+          element={<PageShell><RequireModule module="caisse"><Caisse /></RequireModule></PageShell>}
+        />
+        <Route
+          path="reports"
+          element={<PageShell><RequireModule module="reports"><Reports /></RequireModule></PageShell>}
+        />
+        <Route
+          path="settings"
+          element={<PageShell><RequireModule module="settings"><Settings /></RequireModule></PageShell>}
+        />
+        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
+      </Routes>
+    </AnimatePresence>
+  );
+}
+
+export default function App() {
+  const user = useApp((s) => s.user);
+  const location = useLocation();
+
+  // Aucune session à restaurer : l'application tourne entièrement en mémoire.
+  // On se contente de précharger les pages pour éviter les écrans blancs.
+  useEffect(() => {
+    preload();
+  }, []);
+
+  return (
+    <>
+      <div className={location.pathname === '/login' ? 'app-bg login-bg' : 'app-bg'} />
+      <Routes>
+        <Route
+          path="/login"
+          element={
+            user ? (
+              <Navigate to="/app/dashboard" replace />
+            ) : (
+              <Suspense fallback={<PageSkeleton />}>
+                <Login />
+              </Suspense>
+            )
+          }
+        />
+        <Route
+          path="/app/*"
+          element={
+            user ? (
+              <AppLayout>
+                <ErrorBoundary>
+                  <AppRoutes />
+                </ErrorBoundary>
+              </AppLayout>
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route path="*" element={<Navigate to={user ? '/app/dashboard' : '/login'} replace />} />
+      </Routes>
+    </>
+  );
+}
