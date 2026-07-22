@@ -21,6 +21,7 @@ const Workers = lazy(() => import('@/pages/Workers'));
 const Expenses = lazy(() => import('@/pages/Expenses'));
 const Caisse = lazy(() => import('@/pages/Caisse'));
 const Reports = lazy(() => import('@/pages/Reports'));
+const Zakat = lazy(() => import('@/pages/Zakat'));
 const Settings = lazy(() => import('@/pages/Settings'));
 
 // Preload all pages to avoid white-screen delays on first navigation
@@ -37,6 +38,7 @@ const preload = () => {
   import('@/pages/Expenses');
   import('@/pages/Caisse');
   import('@/pages/Reports');
+  import('@/pages/Zakat');
   import('@/pages/Settings');
 };
 
@@ -107,6 +109,10 @@ function AppRoutes() {
         <Route
           path="reports"
           element={<PageShell><RequireModule module="reports"><Reports /></RequireModule></PageShell>}
+        />
+        <Route
+          path="zakat"
+          element={<PageShell><RequireModule module="zakat"><Zakat /></RequireModule></PageShell>}
         />
         <Route
           path="settings"

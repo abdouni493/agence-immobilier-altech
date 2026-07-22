@@ -27,6 +27,7 @@ import { reservationPaid, reservationRemaining } from '@/store/selectors';
 import { staggerContainer, listItem } from '@/animations';
 import { formatDA, formatDate, formatDateLong, rangesOverlap, todayISO, addDaysISO, monthKey, nightsBetween } from '@/lib/utils';
 import { useToday } from '@/lib/useToday';
+import { periodUnitLabel, reservationDurationLabel } from '@/lib/rental';
 import { clientName, reservationRoomLabels, clientById } from '@/lib/lookups';
 import { buildReservationPaymentReceiptHTML, buildRentalContractHTML, buildVersementHTML, printHTML } from '@/lib/print';
 import type { Reservation, Payment } from '@/types';
@@ -306,7 +307,7 @@ export default function Reservations() {
                         <Building2 size={13} className="text-sky-300" /> {reservationRoomLabels(data, r)}
                       </p>
                       <p className="flex items-center gap-2 text-xs text-slate-300">
-                        <CalendarDays size={13} className="text-sky-300" /> {formatDate(r.checkIn, lang)} → {formatDate(r.checkOut, lang)} · {r.nights} {t('common.nights')}
+                        <CalendarDays size={13} className="text-sky-300" /> {formatDate(r.checkIn, lang)} → {formatDate(r.checkOut, lang)} · {reservationDurationLabel(r, t)}
                       </p>
                     </div>
 
@@ -531,8 +532,8 @@ function ClotureModal({ reservation, onClose }: { reservation: Reservation | nul
               <span className="font-semibold">{r.checkInTime} → {r.checkOutTime}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-ink-secondary">Nuits réservées</span>
-              <span className="font-semibold">{r.nights}</span>
+              <span className="text-ink-secondary">Durée réservée</span>
+              <span className="font-semibold">{reservationDurationLabel(r, t)}</span>
             </div>
           </div>
 
@@ -799,8 +800,8 @@ function DetailModal({
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-bold text-ink-primary">{formatDA(rr.pricePerNight)} <span className="text-[10px] font-normal text-ink-muted">/ {t('common.night')}</span></p>
-                      <p className="text-xs text-ink-muted">{r.nights} {r.nights > 1 ? t('common.nights') : t('common.night')}</p>
+                      <p className="text-sm font-bold text-ink-primary">{formatDA(rr.pricePerNight)} <span className="text-[10px] font-normal text-ink-muted">/ {periodUnitLabel(r.rentalPeriod ?? 'day', t)}</span></p>
+                      <p className="text-xs text-ink-muted">{reservationDurationLabel(r, t)}</p>
                     </div>
                   </div>
                 );

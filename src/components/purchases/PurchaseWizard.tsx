@@ -62,9 +62,7 @@ export function PurchaseWizard({
     existingRoom
       ? {
           name: existingRoom.name,
-          wilaya: existingRoom.wilaya ?? '',
           commune: existingRoom.commune ?? '',
-          secteur: existingRoom.secteur ?? '',
           floorId: existingRoom.floorId ?? '',
           capacity: String(existingRoom.capacity ?? 1),
           description: existingRoom.description ?? '',
@@ -129,9 +127,7 @@ export function PurchaseWizard({
       floorId: aptDraft.floorId,
       categoryId: '',
       pricePerNight: 0,
-      wilaya: aptDraft.wilaya.trim() || undefined,
       commune: aptDraft.commune.trim() || undefined,
-      secteur: aptDraft.secteur.trim() || undefined,
       description: aptDraft.description.trim() || undefined,
       propertyType: 'sale' as const,
       ownerClientId: clientId,
@@ -373,7 +369,7 @@ export function PurchaseWizard({
                         <SummaryCard icon={<Building2 size={16} />} title={t('purchases.stepApartment')} color="sky">
                           <p className="text-sm font-bold">{aptDraft.name}</p>
                           <p className="text-xs text-ink-muted flex items-center gap-1">
-                            <MapPin size={11} /> {[aptDraft.wilaya, aptDraft.commune, aptDraft.secteur].filter(Boolean).join(', ') || '—'}
+                            <MapPin size={11} /> {aptDraft.commune || '—'}
                           </p>
                         </SummaryCard>
 

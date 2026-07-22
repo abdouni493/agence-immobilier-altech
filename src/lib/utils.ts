@@ -19,6 +19,15 @@ export function formatNumber(n: number): string {
   return n.toLocaleString('fr-FR');
 }
 
+/** Montant comptable : séparateur de milliers + 2 décimales, ex. "3 500 000,00 DA". */
+export function formatDA2(amount: number): string {
+  const safe = Number.isFinite(amount) ? amount : 0;
+  return `${safe.toLocaleString('fr-FR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} DA`;
+}
+
 /** Parse a "yyyy-mm-dd" string as a LOCAL date (new Date(iso) would parse it as UTC
  *  and shift the displayed day in some timezones). Falls back to Date parsing. */
 function parseISODate(iso: string): Date {
@@ -74,6 +83,34 @@ export function nightsBetween(startISO: string, endISO: string): number {
   const end = new Date(endISO);
   const diff = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
   return Math.max(0, diff);
+}
+
+/**
+ * Number of months between two ISO dates, with the incomplete last month
+ * counted at prorata (ex. 15/01 → 15/03 = 2, 15/01 → 30/03 ≈ 2.5).
+ */
+export function monthsBetween(startISO: string, endISO: string): number {
+  if (!startISO || !endISO || endISO <= startISO) return 0;
+  const start = parseISODate(startISO);
+  const end = parseISODate(endISO);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
+
+  let months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+  const anchor = new Date(start);
+  anchor.setMonth(anchor.getMonth() + months);
+  // The anchor may land past the end date when the day-of-month is smaller.
+  if (anchor > end) {
+    months -= 1;
+    anchor.setMonth(anchor.getMonth() - 1);
+  }
+  const extraDays = Math.round((end.getTime() - anchor.getTime()) / 86_400_000);
+  const daysInAnchorMonth = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate();
+  return Math.max(0, months + extraDays / daysInAnchorMonth);
+}
+
+/** Rounded month count for display, ex. 2.5 -> "2,5". */
+export function formatMonths(months: number): string {
+  return (Math.round(months * 100) / 100).toLocaleString('fr-FR', { maximumFractionDigits: 2 });
 }
 
 /** Whether two [start,end) date ranges overlap */

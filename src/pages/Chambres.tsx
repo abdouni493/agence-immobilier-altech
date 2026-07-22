@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BedDouble, Plus, Pencil, Trash2, Wrench, Eye, Layers, Tag, Users, Check, X, Wallet,
-  MapPin, UserPlus, Home, Tags, Handshake,
+  BedDouble, Plus, Pencil, Trash2, Wrench, Eye, Layers, Tag, Users, Check, X,
+  MapPin, Home, Tags, Handshake, CalendarClock, Sofa,
 } from 'lucide-react';
 import { useApp, useCurrentPermissions, can } from '@/store/appStore';
 import { useAppData } from '@/store/hooks';
@@ -15,14 +15,18 @@ import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { TextField, SelectField, SegmentedControl, TextArea } from '@/components/ui/Field';
-import type { MediatorFormData } from '@/components/forms/MediatorForm';
+import { MediatorPicker } from '@/components/forms/MediatorPicker';
 import { effectiveRoomStatus, reservationPaid } from '@/store/selectors';
 import { staggerContainer, listItem } from '@/animations';
-import { formatDA, formatDate, todayISO, addDaysISO, nightsBetween, cn } from '@/lib/utils';
+import { formatDA, formatDate, todayISO, addDaysISO, nightsBetween, monthsBetween, cn } from '@/lib/utils';
+import { rentalPeriodOf, periodUnitLabel } from '@/lib/rental';
 import { categoryName, floorName, clientName, mediatorName } from '@/lib/lookups';
-import type { Room, RoomStatus, PropertyType, Mediator } from '@/types';
+import type { Room, RoomStatus, PropertyType, RentalPeriod } from '@/types';
 
-type Filter = 'all' | RoomStatus | 'rental' | 'sale';
+type StatusFilter = 'all' | RoomStatus;
+type TypeFilter = 'all' | PropertyType;
+type PeriodFilter = 'all' | RentalPeriod;
+type FurnishFilter = 'all' | 'furnished' | 'unfurnished';
 
 export default function Chambres() {
   const { t, lang } = useI18n();
@@ -40,10 +44,12 @@ export default function Chambres() {
   const deleteFloor = useApp((s) => s.deleteFloor);
   const addCategory = useApp((s) => s.addCategory);
   const deleteCategory = useApp((s) => s.deleteCategory);
-  const addMediator = useApp((s) => s.addMediator);
 
   const today = todayISO();
-  const [filter, setFilter] = useState<Filter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
+  const [furnishFilter, setFurnishFilter] = useState<FurnishFilter>('all');
   const [formRoom, setFormRoom] = useState<Room | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [manageFloors, setManageFloors] = useState(false);
@@ -56,13 +62,18 @@ export default function Chambres() {
     () => rooms.map((r) => ({ room: r, status: effectiveRoomStatus(r, data.reservations, today) })),
     [rooms, data.reservations, today],
   );
-  const filtered = useMemo(() => {
-    if (filter === 'all') return withStatus;
-    if (filter === 'rental' || filter === 'sale') {
-      return withStatus.filter((x) => (x.room.propertyType ?? 'rental') === filter);
-    }
-    return withStatus.filter((x) => x.status === filter);
-  }, [withStatus, filter]);
+  const filtered = useMemo(
+    () =>
+      withStatus.filter(({ room, status }) => {
+        if (statusFilter !== 'all' && status !== statusFilter) return false;
+        if (typeFilter !== 'all' && (room.propertyType ?? 'rental') !== typeFilter) return false;
+        // Périodicité et ameublement ne concernent que les biens en location.
+        if (periodFilter !== 'all' && rentalPeriodOf(room) !== periodFilter) return false;
+        if (furnishFilter !== 'all' && !!room.furnished !== (furnishFilter === 'furnished')) return false;
+        return true;
+      }),
+    [withStatus, statusFilter, typeFilter, periodFilter, furnishFilter],
+  );
 
   return (
     <div>
@@ -87,20 +98,56 @@ export default function Chambres() {
         }
       />
 
-      <div className="mb-5 flex flex-wrap gap-3">
-        <SegmentedControl<Filter>
-          value={filter}
-          onChange={setFilter}
-          size="sm"
-          options={[
-            { value: 'all', label: t('common.all') },
-            { value: 'available', label: t('rooms.available') },
-            { value: 'occupied', label: t('rooms.occupied') },
-            { value: 'maintenance', label: t('rooms.maintenance') },
-            { value: 'rental', label: t('apt.typeRental') },
-            { value: 'sale', label: t('apt.typeSale') },
-          ]}
-        />
+      <div className="mb-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <FilterGroup label={t('rooms.filterStatus')}>
+          <SegmentedControl<StatusFilter>
+            value={statusFilter}
+            onChange={setStatusFilter}
+            size="sm"
+            options={[
+              { value: 'all', label: t('common.all') },
+              { value: 'available', label: t('rooms.available') },
+              { value: 'occupied', label: t('rooms.occupied') },
+              { value: 'maintenance', label: t('rooms.maintenance') },
+            ]}
+          />
+        </FilterGroup>
+        <FilterGroup label={t('apt.type')}>
+          <SegmentedControl<TypeFilter>
+            value={typeFilter}
+            onChange={setTypeFilter}
+            size="sm"
+            options={[
+              { value: 'all', label: t('common.all') },
+              { value: 'rental', label: t('apt.typeRental') },
+              { value: 'sale', label: t('apt.typeSale') },
+            ]}
+          />
+        </FilterGroup>
+        <FilterGroup label={t('rooms.filterPeriod')}>
+          <SegmentedControl<PeriodFilter>
+            value={periodFilter}
+            onChange={setPeriodFilter}
+            size="sm"
+            options={[
+              { value: 'all', label: t('common.all') },
+              { value: 'day', label: t('apt.perDay') },
+              { value: 'month', label: t('apt.perMonth') },
+            ]}
+          />
+        </FilterGroup>
+        <FilterGroup label={t('rooms.filterFurnishing')}>
+          <SegmentedControl<FurnishFilter>
+            value={furnishFilter}
+            onChange={setFurnishFilter}
+            size="sm"
+            options={[
+              { value: 'all', label: t('common.all') },
+              { value: 'furnished', label: t('apt.furnished') },
+              { value: 'unfurnished', label: t('apt.notFurnished') },
+            ]}
+          />
+        </FilterGroup>
       </div>
 
       {filtered.length === 0 ? (
@@ -132,10 +179,17 @@ export default function Chambres() {
                     </div>
                   </div>
 
-                  {(room.wilaya || room.commune || room.secteur) && (
+                  {(room.propertyType ?? 'rental') === 'rental' && (
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                      <RentalPeriodBadge period={rentalPeriodOf(room)} />
+                      <FurnishedBadge furnished={!!room.furnished} />
+                    </div>
+                  )}
+
+                  {room.commune && (
                     <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-300">
                       <MapPin size={13} className="text-sky-300 shrink-0" />
-                      {[room.wilaya, room.commune, room.secteur].filter(Boolean).join(', ')}
+                      {room.commune}
                     </p>
                   )}
                   {(room.ownerName || room.ownerClientId) && (
@@ -158,7 +212,10 @@ export default function Chambres() {
                     {(room.propertyType ?? 'rental') === 'sale' ? (
                       room.salePrice ? <span className="text-lg font-extrabold text-white">{formatDA(room.salePrice)}</span> : null
                     ) : (
-                      <span className="text-lg font-extrabold text-white">{formatDA(room.pricePerNight)}<span className="text-xs text-sky-200/70 font-medium"> / {t('common.night')}</span></span>
+                      <span className="text-lg font-extrabold text-white">
+                        {formatDA(room.pricePerNight)}
+                        <span className="text-xs text-sky-200/70 font-medium"> / {periodUnitLabel(rentalPeriodOf(room), t)}</span>
+                      </span>
                     )}
                   </div>
 
@@ -204,10 +261,8 @@ export default function Chambres() {
           room={formRoom}
           floors={floors}
           categories={categories}
-          mediators={data.mediators}
           onAddFloor={addFloor}
           onAddCategory={addCategory}
-          onAddMediator={addMediator}
           onClose={() => setFormOpen(false)}
           onSave={async (payload) => {
             if (formRoom) { await updateRoom(formRoom.id, payload); toast.success(t('toast.updated')); }
@@ -257,6 +312,37 @@ export default function Chambres() {
   );
 }
 
+function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-ink-muted">{label}</p>
+      {children}
+    </div>
+  );
+}
+
+function RentalPeriodBadge({ period }: { period: RentalPeriod }) {
+  const { t } = useI18n();
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/30 bg-violet-500/20 px-2 py-0.5 text-[10px] font-semibold text-violet-200">
+      <CalendarClock size={10} /> {period === 'month' ? t('apt.perMonth') : t('apt.perDay')}
+    </span>
+  );
+}
+
+function FurnishedBadge({ furnished }: { furnished: boolean }) {
+  const { t } = useI18n();
+  return furnished ? (
+    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-200">
+      <Sofa size={10} /> {t('apt.furnished')}
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
+      <Sofa size={10} /> {t('apt.notFurnished')}
+    </span>
+  );
+}
+
 function Info({ label, value }: { label: string; value?: string }) {
   return (
     <div className="min-w-0">
@@ -282,15 +368,13 @@ function PropertyTypeBadge({ type }: { type: PropertyType }) {
 }
 
 function RoomFormModal({
-  room, floors, categories, mediators, onAddFloor, onAddCategory, onAddMediator, onClose, onSave,
+  room, floors, categories, onAddFloor, onAddCategory, onClose, onSave,
 }: {
   room: Room | null;
   floors: { id: string; name: string }[];
   categories: { id: string; name: string }[];
-  mediators: Mediator[];
   onAddFloor: (name: string) => void;
   onAddCategory: (name: string) => void;
-  onAddMediator: (m: MediatorFormData) => Promise<Mediator>;
   onClose: () => void;
   onSave: (payload: Omit<Room, 'id' | 'status'>) => void;
 }) {
@@ -303,39 +387,24 @@ function RoomFormModal({
   const [price, setPrice] = useState(String(room?.pricePerNight ?? ''));
   const [salePrice, setSalePrice] = useState(room?.salePrice != null ? String(room.salePrice) : '');
   const [propertyType, setPropertyType] = useState<PropertyType>(room?.propertyType ?? 'rental');
-  const [wilaya, setWilaya] = useState(room?.wilaya ?? '');
+  const [rentalPeriod, setRentalPeriod] = useState<RentalPeriod>(rentalPeriodOf(room ?? undefined));
+  const [furnished, setFurnished] = useState<boolean>(room?.furnished ?? false);
+  const [furnitureDescription, setFurnitureDescription] = useState(room?.furnitureDescription ?? '');
   const [commune, setCommune] = useState(room?.commune ?? '');
-  const [secteur, setSecteur] = useState(room?.secteur ?? '');
   const [description, setDescription] = useState(room?.description ?? '');
   const [ownerName, setOwnerName] = useState(room?.ownerName ?? '');
   const [ownerPhone, setOwnerPhone] = useState(room?.ownerPhone ?? '');
   const [mediatorId, setMediatorId] = useState(room?.mediatorId ?? '');
-  const [showMediatorInput, setShowMediatorInput] = useState(false);
-  const [newMedName, setNewMedName] = useState('');
-  const [newMedPhone, setNewMedPhone] = useState('');
   const [newFloor, setNewFloor] = useState('');
   const [newCat, setNewCat] = useState('');
   const [showFloorInput, setShowFloorInput] = useState(false);
   const [showCatInput, setShowCatInput] = useState(false);
 
-  const createMediator = async () => {
-    if (!newMedName.trim() || !newMedPhone.trim()) return toast.error(t('login.required'));
-    const parts = newMedName.trim().split(/\s+/);
-    const firstName = parts.shift() ?? '';
-    const lastName = parts.join(' ');
-    const m = await onAddMediator({
-      firstName, lastName, phone: newMedPhone.trim(),
-      phone2: '', email: '', address: '', city: '', cin: '', notes: '',
-    });
-    setMediatorId(m.id);
-    setShowMediatorInput(false);
-    setNewMedName(''); setNewMedPhone('');
-    toast.success(t('toast.created'));
-  };
+  const isRental = propertyType === 'rental';
 
   const save = () => {
     if (!name.trim()) return toast.error(t('login.required'));
-    if (propertyType === 'rental' && !price) return toast.error(t('login.required'));
+    if (isRental && !price) return toast.error(t('login.required'));
     onSave({
       name: name.trim(),
       capacity: Number(capacity) || 1,
@@ -343,11 +412,13 @@ function RoomFormModal({
       categoryId,
       pricePerNight: price ? Number(price) : 0,
       maintenanceNote: room?.maintenanceNote,
-      wilaya: wilaya.trim() || undefined,
       commune: commune.trim() || undefined,
-      secteur: secteur.trim() || undefined,
       description: description.trim() || undefined,
       propertyType,
+      // La périodicité et l'ameublement ne concernent que la location.
+      rentalPeriod: isRental ? rentalPeriod : undefined,
+      furnished: isRental ? furnished : undefined,
+      furnitureDescription: isRental && furnished ? furnitureDescription.trim() || undefined : undefined,
       ownerClientId: room?.ownerClientId || undefined,
       ownerName: ownerName.trim() || undefined,
       ownerPhone: ownerPhone.trim() || undefined,
@@ -383,13 +454,52 @@ function RoomFormModal({
           </div>
         </div>
 
+        {/* Rental period — only meaningful for a rental */}
+        {isRental && (
+          <div>
+            <p className="text-xs font-semibold text-ink-secondary mb-1.5">{t('apt.rentalPeriod')}</p>
+            <p className="text-[11px] text-ink-muted mb-2">{t('apt.rentalPeriodHint')}</p>
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1.5">
+              <button onClick={() => setRentalPeriod('day')} className={cn('flex-1 h-10 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5', rentalPeriod === 'day' ? 'bg-white shadow text-brand-700' : 'text-ink-secondary')}>
+                <CalendarClock size={15} /> {t('apt.perDay')}
+              </button>
+              <button onClick={() => setRentalPeriod('month')} className={cn('flex-1 h-10 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5', rentalPeriod === 'month' ? 'bg-white shadow text-brand-700' : 'text-ink-secondary')}>
+                <CalendarClock size={15} /> {t('apt.perMonth')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Furnishing — only meaningful for a rental */}
+        {isRental && (
+          <div>
+            <p className="text-xs font-semibold text-ink-secondary mb-1.5">{t('apt.furnishing')}</p>
+            <p className="text-[11px] text-ink-muted mb-2">{t('apt.furnishingHint')}</p>
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1.5">
+              <button onClick={() => setFurnished(true)} className={cn('flex-1 h-10 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5', furnished ? 'bg-white shadow text-brand-700' : 'text-ink-secondary')}>
+                <Sofa size={15} /> {t('apt.furnished')}
+              </button>
+              <button onClick={() => setFurnished(false)} className={cn('flex-1 h-10 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5', !furnished ? 'bg-white shadow text-brand-700' : 'text-ink-secondary')}>
+                <Sofa size={15} /> {t('apt.notFurnished')}
+              </button>
+            </div>
+            {furnished && (
+              <TextArea
+                wrapClassName="mt-3"
+                label={t('apt.furnitureDescription')}
+                value={furnitureDescription}
+                onChange={(e) => setFurnitureDescription(e.target.value)}
+                placeholder={t('apt.furniturePlaceholder')}
+              />
+            )}
+          </div>
+        )}
+
         {/* Identity */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <TextField label={t('rooms.roomName')} required value={name} onChange={(e) => setName(e.target.value)} autoFocus />
           <TextField label={t('apt.roomsNumber')} type="number" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
-          <TextField label={t('apt.wilaya')} value={wilaya} onChange={(e) => setWilaya(e.target.value)} />
           <TextField label={t('apt.commune')} value={commune} onChange={(e) => setCommune(e.target.value)} />
-          <TextField label={t('apt.secteur')} value={secteur} onChange={(e) => setSecteur(e.target.value)} />
 
           <div>
             <SelectField label={t('apt.etage')} value={floorId} onChange={(e) => setFloorId(e.target.value)}>
@@ -409,7 +519,7 @@ function RoomFormModal({
             )}
           </div>
 
-          {propertyType === 'rental' ? (
+          {isRental ? (
             <>
               <div>
                 <SelectField label={t('common.category')} value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
@@ -428,7 +538,14 @@ function RoomFormModal({
                   </div>
                 )}
               </div>
-              <TextField label={`${t('rooms.pricePerNight')} (DA)`} required type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
+              <TextField
+                label={rentalPeriod === 'month' ? t('apt.pricePerMonth') : t('apt.pricePerDay')}
+                required
+                type="number"
+                min={0}
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+              />
             </>
           ) : (
             <TextField label={t('apt.salePrice')} type="number" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
@@ -447,32 +564,8 @@ function RoomFormModal({
           </div>
         </div>
 
-        {/* Mediator (choose existing or create new — name + phone only) */}
-        <div>
-          <p className="text-xs font-semibold text-ink-secondary mb-1.5">{t('apt.mediator')}</p>
-          <p className="text-[11px] text-ink-muted mb-2">{t('apt.mediatorHint')}</p>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <SelectField wrapClassName="flex-1" value={mediatorId} onChange={(e) => setMediatorId(e.target.value)}>
-              <option value="">{t('apt.noMediator')}</option>
-              {mediators.map((m) => <option key={m.id} value={m.id}>{m.firstName} {m.lastName} · {m.phone}</option>)}
-            </SelectField>
-            {!showMediatorInput && (
-              <GradientButton variant="glass" icon={<UserPlus size={16} />} onClick={() => setShowMediatorInput(true)}>{t('apt.newMediator')}</GradientButton>
-            )}
-          </div>
-          {showMediatorInput && (
-            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <TextField label={t('apt.ownerName')} value={newMedName} onChange={(e) => setNewMedName(e.target.value)} placeholder={t('apt.mediatorNamePlaceholder')} autoFocus />
-                <TextField label={t('common.phone')} value={newMedPhone} onChange={(e) => setNewMedPhone(e.target.value)} placeholder="06 00 00 00 00" />
-              </div>
-              <div className="flex gap-2 justify-end">
-                <button type="button" onClick={() => { setShowMediatorInput(false); setNewMedName(''); setNewMedPhone(''); }} className="grid h-9 w-9 place-items-center rounded-lg glass text-ink-secondary"><X size={16} /></button>
-                <GradientButton size="sm" icon={<Check size={16} />} onClick={createMediator}>{t('common.create')}</GradientButton>
-              </div>
-            </div>
-          )}
-        </div>
+        {/* Mediator — searchable across mediators AND "Médiateur" workers */}
+        <MediatorPicker value={mediatorId} onChange={setMediatorId} />
       </div>
     </Modal>
   );
@@ -575,7 +668,12 @@ function RoomDetailsModal({
   const gains = useMemo(
     () => reservations.reduce((s, r) => {
       const rr = r.rooms.find((x) => x.roomId === room?.id);
-      return s + (rr ? rr.pricePerNight * nightsBetween(r.checkIn, r.checkOut) : 0);
+      if (!rr) return s;
+      // La location est facturée à la journée ou au mois selon ce qui a été enregistré.
+      const units = r.rentalPeriod === 'month'
+        ? (r.months ?? monthsBetween(r.checkIn, r.checkOut))
+        : nightsBetween(r.checkIn, r.checkOut);
+      return s + rr.pricePerNight * units;
     }, 0),
     [reservations, room],
   );
@@ -604,16 +702,24 @@ function RoomDetailsModal({
               <Info label={t('common.category')} value={categoryName(data, room.categoryId)} />
               <Info label={t('apt.etage')} value={floorName(data, room.floorId)} />
               <Info label={t('apt.roomsNumber')} value={String(room.capacity)} />
-              <Info label={t('apt.wilaya')} value={room.wilaya} />
               <Info label={t('apt.commune')} value={room.commune} />
-              <Info label={t('apt.secteur')} value={room.secteur} />
               {(room.propertyType ?? 'rental') === 'sale' ? (
                 <>
                   <Info label={t('apt.salePrice')} value={room.salePrice != null ? formatDA(room.salePrice) : undefined} />
                   <Info label={t('purchases.purchasePrice')} value={room.purchasePrice != null ? formatDA(room.purchasePrice) : undefined} />
                 </>
               ) : (
-                <Info label={t('rooms.pricePerNight')} value={formatDA(room.pricePerNight)} />
+                <>
+                  <Info
+                    label={rentalPeriodOf(room) === 'month' ? t('rooms.pricePerMonth') : t('rooms.pricePerDay')}
+                    value={formatDA(room.pricePerNight)}
+                  />
+                  <Info
+                    label={t('apt.rentalPeriod')}
+                    value={rentalPeriodOf(room) === 'month' ? t('apt.perMonth') : t('apt.perDay')}
+                  />
+                  <Info label={t('apt.furnishing')} value={room.furnished ? t('apt.furnished') : t('apt.notFurnished')} />
+                </>
               )}
               <Info label={t('apt.ownerName')} value={room.ownerName || (room.ownerClientId ? clientName(data, room.ownerClientId) : undefined)} />
               <Info label={t('apt.ownerPhone')} value={room.ownerPhone} />
@@ -623,6 +729,14 @@ function RoomDetailsModal({
               <div className="mt-3 pt-3 border-t border-slate-100">
                 <p className="text-[10px] font-bold text-ink-muted uppercase tracking-wide mb-1">{t('apt.description')}</p>
                 <p className="text-sm text-ink-secondary whitespace-pre-wrap">{room.description}</p>
+              </div>
+            )}
+            {room.furnished && room.furnitureDescription && (
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <p className="text-[10px] font-bold text-ink-muted uppercase tracking-wide mb-1 flex items-center gap-1.5">
+                  <Sofa size={11} className="text-emerald-500" /> {t('apt.furnitureDescription')}
+                </p>
+                <p className="text-sm text-ink-secondary whitespace-pre-wrap">{room.furnitureDescription}</p>
               </div>
             )}
           </div>

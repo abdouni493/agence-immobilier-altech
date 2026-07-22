@@ -280,9 +280,7 @@ function PurchaseDetailModal({
               <div className="space-y-2 text-sm">
                 <p className="text-base font-bold text-ink-primary">{room.name}</p>
                 <div className="grid grid-cols-2 gap-3 text-xs">
-                  {room.wilaya && <InfoLine label={t('apt.wilaya')} value={room.wilaya} />}
                   {room.commune && <InfoLine label={t('apt.commune')} value={room.commune} />}
-                  {room.secteur && <InfoLine label={t('apt.secteur')} value={room.secteur} />}
                   <InfoLine label={t('apt.roomsNumber')} value={String(room.capacity)} />
                 </div>
                 {room.description && <p className="text-xs text-ink-secondary pt-2 border-t border-slate-100">{room.description}</p>}

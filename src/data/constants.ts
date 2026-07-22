@@ -27,6 +27,7 @@ export const MODULE_ACTIONS: Record<ModuleKey, ActionKey[]> = {
   expenses: ['view', 'create', 'edit', 'delete'],
   caisse: ['view', 'create'],
   reports: ['view', 'print'],
+  zakat: ['view', 'print'],
   settings: ['view', 'edit'],
 };
 
@@ -43,6 +44,7 @@ export const MODULE_ORDER: ModuleKey[] = [
   'expenses',
   'caisse',
   'reports',
+  'zakat',
   'settings',
 ];
 

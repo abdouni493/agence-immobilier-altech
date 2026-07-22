@@ -11,6 +11,7 @@ import {
   ReceiptText,
   Wallet,
   ChartColumnBig,
+  Coins,
   Settings2,
   type LucideIcon,
 } from 'lucide-react';
@@ -38,5 +39,6 @@ export const NAV_ITEMS: NavItem[] = [
   { module: 'expenses', path: '/app/expenses', labelKey: 'nav.expenses', icon: ReceiptText, color: 'warning' },
   { module: 'caisse', path: '/app/caisse', labelKey: 'nav.caisse', icon: Wallet, color: 'success' },
   { module: 'reports', path: '/app/reports', labelKey: 'nav.reports', icon: ChartColumnBig, color: 'cyan' },
+  { module: 'zakat', path: '/app/zakat', labelKey: 'nav.zakat', icon: Coins, color: 'gold' },
   { module: 'settings', path: '/app/settings', labelKey: 'nav.settings', icon: Settings2, color: 'primary' },
 ];

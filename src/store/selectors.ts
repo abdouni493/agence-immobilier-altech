@@ -307,6 +307,55 @@ export function caisseRecap(data: AppData, from: string, to: string): CaisseReca
   };
 }
 
+// -------- Zakat (année civile) --------
+
+export interface YearlyZakat {
+  year: number;
+  from: string;
+  to: string;
+  totalIn: number;
+  totalOut: number;
+  /** Gains nets de l'année (jamais négatifs pour l'assiette de zakat). */
+  netGains: number;
+  zakat: number;
+}
+
+/**
+ * Zakat automatique d'une année civile : 2,5 % des gains nets encaissés
+ * entre le 1er janvier et le 31 décembre.
+ */
+export function yearlyZakat(data: AppData, year: number, rate = 0.025): YearlyZakat {
+  const from = `${year}-01-01`;
+  const to = `${year}-12-31`;
+  const recap = caisseRecap(data, from, to);
+  const netGains = Math.max(0, recap.net);
+  return {
+    year,
+    from,
+    to,
+    totalIn: recap.totalIn,
+    totalOut: recap.totalOut,
+    netGains,
+    zakat: netGains * rate,
+  };
+}
+
+/** Années pour lesquelles l'application détient des mouvements, plus l'année courante. */
+export function zakatYears(data: AppData, today: string): number[] {
+  const years = new Set<number>([Number(today.slice(0, 4))]);
+  const push = (iso?: string) => {
+    const y = Number((iso ?? '').slice(0, 4));
+    if (y >= 2000 && y <= 2999) years.add(y);
+  };
+  for (const r of data.reservations) for (const p of r.payments) push(p.date);
+  for (const s of data.sales) for (const p of s.payments) push(p.date);
+  for (const pu of data.purchases) for (const p of pu.payments) push(p.date);
+  for (const e of data.expenses) push(e.date);
+  for (const m of data.maintenances) push(m.date);
+  for (const tx of data.cashTransactions) push(tx.date);
+  return [...years].sort((a, b) => b - a);
+}
+
 /** All-time caisse balance. */
 export function caisseBalance(data: AppData): number {
   const farPast = '2000-01-01';

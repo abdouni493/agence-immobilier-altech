@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   TrendingDown, Plus, Pencil, Trash2, Wrench, Tag, FolderCog, ShoppingCart, Check, BedDouble,
+  Printer, CalendarRange,
 } from 'lucide-react';
 import { useApp, useCurrentPermissions, can } from '@/store/appStore';
 import { useAppData } from '@/store/hooks';
@@ -14,8 +15,9 @@ import { Modal } from '@/components/ui/Modal';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { TextField, TextArea, SelectField } from '@/components/ui/Field';
 import { staggerContainer, listItem } from '@/animations';
-import { formatDA, formatDate, todayISO } from '@/lib/utils';
+import { formatDA, formatDate, todayISO, addDaysISO } from '@/lib/utils';
 import { expenseCategoryName, roomName } from '@/lib/lookups';
+import { buildExpensesReportHTML, printHTML } from '@/lib/print';
 import type { Expense, Maintenance } from '@/types';
 
 export default function Expenses() {
@@ -23,23 +25,52 @@ export default function Expenses() {
   const toast = useToast();
   const data = useAppData();
   const perms = useCurrentPermissions();
+  const storeInfo = useApp((s) => s.storeInfo);
 
   const deleteExpense = useApp((s) => s.deleteExpense);
   const deleteMaintenance = useApp((s) => s.deleteMaintenance);
 
   const [tab, setTab] = useState<'general' | 'maintenance'>('general');
   const [catFilter, setCatFilter] = useState('all');
+  // Période affichée / imprimée — 30 derniers jours par défaut.
+  const [from, setFrom] = useState(addDaysISO(todayISO(), -30));
+  const [to, setTo] = useState(todayISO());
   const [expForm, setExpForm] = useState<Expense | null>(null);
   const [expFormOpen, setExpFormOpen] = useState(false);
   const [maintFormOpen, setMaintFormOpen] = useState(false);
   const [manageCats, setManageCats] = useState(false);
+  const [printOpen, setPrintOpen] = useState(false);
   const [delExp, setDelExp] = useState<Expense | null>(null);
   const [delMaint, setDelMaint] = useState<Maintenance | null>(null);
 
   const filteredExpenses = useMemo(
-    () => (catFilter === 'all' ? data.expenses : data.expenses.filter((e) => e.categoryId === catFilter)),
-    [data.expenses, catFilter],
+    () =>
+      data.expenses.filter(
+        (e) =>
+          (catFilter === 'all' || e.categoryId === catFilter) &&
+          e.date >= from &&
+          e.date <= to,
+      ),
+    [data.expenses, catFilter, from, to],
   );
+
+  const printExpenses = (rangeFrom: string, rangeTo: string) => {
+    const rows = data.expenses
+      .filter(
+        (e) =>
+          (catFilter === 'all' || e.categoryId === catFilter) &&
+          e.date >= rangeFrom &&
+          e.date <= rangeTo,
+      )
+      .map((e) => ({
+        date: e.date,
+        name: e.name,
+        category: expenseCategoryName(data, e.categoryId),
+        description: e.description,
+        amount: e.amount,
+      }));
+    printHTML('depenses', buildExpensesReportHTML(rows, rangeFrom, rangeTo, storeInfo));
+  };
 
   const maintByRoom = useMemo(() => {
     const map = new Map<string, Maintenance[]>();
@@ -52,16 +83,18 @@ export default function Expenses() {
   }, [data.maintenances]);
 
   const catSummary = useMemo(() => {
-    const total = data.expenses.reduce((s, e) => s + e.amount, 0);
+    // Répartition sur la période affichée (toutes catégories confondues).
+    const inRange = data.expenses.filter((e) => e.date >= from && e.date <= to);
+    const total = inRange.reduce((s, e) => s + e.amount, 0);
     return data.expenseCategories
       .map((cat) => ({
         name: cat.name,
-        value: data.expenses.filter((e) => e.categoryId === cat.id).reduce((s, e) => s + e.amount, 0),
+        value: inRange.filter((e) => e.categoryId === cat.id).reduce((s, e) => s + e.amount, 0),
         total,
       }))
       .filter((c) => c.value > 0)
       .sort((a, b) => b.value - a.value);
-  }, [data.expenses, data.expenseCategories]);
+  }, [data.expenses, data.expenseCategories, from, to]);
 
   return (
     <div>
@@ -71,6 +104,11 @@ export default function Expenses() {
         subtitle={t('expenses.subtitle')}
         actions={
           <>
+            {tab === 'general' && (
+              <GradientButton variant="glass" icon={<Printer size={17} />} onClick={() => setPrintOpen(true)}>
+                {t('expenses.print')}
+              </GradientButton>
+            )}
             {can(perms, 'expenses', 'create') && tab === 'general' && (
               <>
                 <GradientButton variant="glass" icon={<FolderCog size={17} />} onClick={() => setManageCats(true)}>{t('common.category')}</GradientButton>
@@ -116,16 +154,25 @@ export default function Expenses() {
           ]}
         />
         {tab === 'general' && (
-          <SelectField value={catFilter} onChange={(e) => setCatFilter(e.target.value)} wrapClassName="w-48">
-            <option value="all">{t('common.all')}</option>
-            {data.expenseCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </SelectField>
+          <>
+            <SelectField value={catFilter} onChange={(e) => setCatFilter(e.target.value)} wrapClassName="w-48">
+              <option value="all">{t('common.all')}</option>
+              {data.expenseCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </SelectField>
+            <div className="flex items-end gap-2">
+              <TextField label={t('common.from')} type="date" value={from} onChange={(e) => setFrom(e.target.value)} wrapClassName="w-44" />
+              <TextField label={t('common.to')} type="date" value={to} onChange={(e) => setTo(e.target.value)} wrapClassName="w-44" />
+            </div>
+            <span className="text-xs font-semibold text-ink-muted">
+              {t('expenses.countInRange', { count: filteredExpenses.length })}
+            </span>
+          </>
         )}
       </div>
 
       {tab === 'general' ? (
         filteredExpenses.length === 0 ? (
-          <EmptyState icon={<TrendingDown size={36} />} title={t('common.noResults')} hint={t('common.emptyHint')} />
+          <EmptyState icon={<TrendingDown size={36} />} title={t('common.noResults')} hint={t('expenses.noneInRange')} />
         ) : (
           <motion.div variants={staggerContainer} initial="initial" animate="animate" className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             <AnimatePresence>
@@ -204,10 +251,79 @@ export default function Expenses() {
       {expFormOpen && <ExpenseForm expense={expForm} onClose={() => { setExpFormOpen(false); setExpForm(null); }} />}
       {maintFormOpen && <MaintenanceForm onClose={() => setMaintFormOpen(false)} />}
       <ManageCategoriesModal open={manageCats} onClose={() => setManageCats(false)} />
+      <PrintExpensesModal
+        open={printOpen}
+        onClose={() => setPrintOpen(false)}
+        defaultFrom={from}
+        defaultTo={to}
+        countInRange={(f, tt) =>
+          data.expenses.filter(
+            (e) => (catFilter === 'all' || e.categoryId === catFilter) && e.date >= f && e.date <= tt,
+          ).length
+        }
+        onPrint={printExpenses}
+      />
 
       <ConfirmDialog open={!!delExp} onClose={() => setDelExp(null)} onConfirm={async () => { if (delExp) { await deleteExpense(delExp.id); toast.success(t('toast.deleted')); } }} message={delExp ? `${t('common.deleteMsg')} (${delExp.name})` : ''} />
       <ConfirmDialog open={!!delMaint} onClose={() => setDelMaint(null)} onConfirm={async () => { if (delMaint) { await deleteMaintenance(delMaint.id); toast.success(t('toast.deleted')); } }} message={delMaint ? `${t('common.deleteMsg')} (${delMaint.name})` : ''} />
     </div>
+  );
+}
+
+/** Choix de la période puis impression de l'état des dépenses. */
+function PrintExpensesModal({
+  open, onClose, defaultFrom, defaultTo, countInRange, onPrint,
+}: {
+  open: boolean;
+  onClose: () => void;
+  defaultFrom: string;
+  defaultTo: string;
+  countInRange: (from: string, to: string) => number;
+  onPrint: (from: string, to: string) => void;
+}) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [from, setFrom] = useState(defaultFrom);
+  const [to, setTo] = useState(defaultTo);
+
+  // Reprend la période affichée à chaque ouverture.
+  useEffect(() => {
+    if (open) { setFrom(defaultFrom); setTo(defaultTo); }
+  }, [open, defaultFrom, defaultTo]);
+
+  const count = countInRange(from, to);
+
+  const print = () => {
+    if (!from || !to || to < from) return toast.error(t('res.monthlyInvalid'));
+    onPrint(from, to);
+    onClose();
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t('expenses.printTitle')}
+      size="sm"
+      footer={
+        <div className="flex gap-3 justify-end">
+          <GradientButton variant="glass" onClick={onClose}>{t('common.cancel')}</GradientButton>
+          <GradientButton icon={<Printer size={16} />} onClick={print}>{t('common.print')}</GradientButton>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-xs text-ink-muted">{t('expenses.printHint')}</p>
+        <div className="grid grid-cols-2 gap-3">
+          <TextField label={t('common.from')} type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <TextField label={t('common.to')} type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        </div>
+        <div className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3.5 py-2.5 text-sm text-sky-700">
+          <CalendarRange size={16} className="shrink-0" />
+          {count > 0 ? t('expenses.countInRange', { count }) : t('expenses.noneInRange')}
+        </div>
+      </div>
+    </Modal>
   );
 }
 

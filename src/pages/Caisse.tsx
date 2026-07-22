@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Landmark, ArrowDownLeft, ArrowUpRight, TrendingUp, TrendingDown, Wallet,
-  ShoppingCart, Wrench, HardHat, Coins, Plus, Tags, ShoppingBag, Handshake,
+  ShoppingCart, Wrench, HardHat, Coins, Tags, ShoppingBag, Handshake,
 } from 'lucide-react';
 import { useApp, useCurrentPermissions, can } from '@/store/appStore';
 import { useAppData } from '@/store/hooks';
@@ -108,12 +109,17 @@ export default function Caisse() {
         title={t('caisse.title')}
         subtitle={t('caisse.subtitle')}
         actions={
-          can(perms, 'caisse', 'create') && (
-            <>
-              <GradientButton variant="success" icon={<ArrowDownLeft size={18} />} onClick={() => setTxModal('deposit')}>{t('caisse.deposit')}</GradientButton>
-              <GradientButton variant="danger" icon={<ArrowUpRight size={18} />} onClick={() => setTxModal('withdrawal')}>{t('caisse.withdrawal')}</GradientButton>
-            </>
-          )
+          <>
+            <Link to="/app/zakat">
+              <GradientButton variant="glass" icon={<Coins size={18} />}>{t('zakat.title')}</GradientButton>
+            </Link>
+            {can(perms, 'caisse', 'create') && (
+              <>
+                <GradientButton variant="success" icon={<ArrowDownLeft size={18} />} onClick={() => setTxModal('deposit')}>{t('caisse.deposit')}</GradientButton>
+                <GradientButton variant="danger" icon={<ArrowUpRight size={18} />} onClick={() => setTxModal('withdrawal')}>{t('caisse.withdrawal')}</GradientButton>
+              </>
+            )}
+          </>
         }
       />
 

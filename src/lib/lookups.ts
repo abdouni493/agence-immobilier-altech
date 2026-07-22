@@ -47,10 +47,8 @@ export function mediatorName(data: AppData, id?: string): string {
   return m ? `${m.firstName} ${m.lastName}` : '—';
 }
 
-/** "Nom · Wilaya, Commune" location line for an apartment card / invoice. */
+/** Commune line for an apartment card / invoice. */
 export function roomLocation(data: AppData, id: string): string {
   const r = data.rooms.find((x) => x.id === id);
-  if (!r) return '—';
-  const loc = [r.wilaya, r.commune, r.secteur].filter(Boolean).join(', ');
-  return loc || '—';
+  return r?.commune || '—';
 }

@@ -4,7 +4,7 @@ import {
   reservationPaid, reservationRemaining, salePaid, saleRemaining,
   purchasePaid, purchaseRemaining, mediatorStats,
 } from '@/store/selectors';
-import { formatDA, formatDate, nightsBetween } from './utils';
+import { formatDA, formatDate, formatMonths, monthsBetween, nightsBetween } from './utils';
 import { clientById, serviceName, mediatorName } from './lookups';
 
 export const PRINT_STYLES = `
@@ -85,6 +85,19 @@ export const PRINT_STYLES = `
   @media print { body { padding: 0; } .no-print { display: none !important; } }
 `;
 
+/**
+ * Unité facturée d'une location (journée ou mois) : sert aux libellés et aux
+ * sous-totaux de tous les documents imprimés.
+ */
+function rentalUnitsOf(r: Reservation) {
+  if (r.rentalPeriod === 'month') {
+    const count = r.months ?? monthsBetween(r.checkIn, r.checkOut);
+    return { count, label: `${formatMonths(count)} mois`, priceHead: 'Prix/mois', countHead: 'Mois', countCell: formatMonths(count) };
+  }
+  const count = nightsBetween(r.checkIn, r.checkOut);
+  return { count, label: `${count} nuit(s)`, priceHead: 'Prix/nuit', countHead: 'Nuits', countCell: String(count) };
+}
+
 export function printHTML(title: string, bodyHtml: string) {
   const iframe = document.createElement('iframe');
   iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
@@ -103,7 +116,7 @@ export function printHTML(title: string, bodyHtml: string) {
 
 export function buildInvoiceHTML(data: AppData, r: Reservation, store: StoreInfo): string {
   const client = clientById(data, r.clientId);
-  const nights = nightsBetween(r.checkIn, r.checkOut);
+  const units = rentalUnitsOf(r);
   const paid = reservationPaid(r);
   const remaining = reservationRemaining(r);
 
@@ -120,8 +133,8 @@ export function buildInvoiceHTML(data: AppData, r: Reservation, store: StoreInfo
       <td>${floor}</td>
       <td>${cat}</td>
       <td class="right">${formatDA(rr.pricePerNight)}</td>
-      <td class="right">${nights}</td>
-      <td class="right">${formatDA(rr.pricePerNight * nights)}</td>
+      <td class="right">${units.countCell}</td>
+      <td class="right">${formatDA(Math.round(rr.pricePerNight * units.count))}</td>
     </tr>`;
   }).join('');
 
@@ -188,14 +201,14 @@ export function buildInvoiceHTML(data: AppData, r: Reservation, store: StoreInfo
         <h3>📅 Location</h3>
         <p><strong>Arrivée:</strong> ${formatDate(r.checkIn)} à ${r.checkInTime}</p>
         <p><strong>Départ:</strong> ${formatDate(r.checkOut)} à ${r.checkOutTime}</p>
-        <p><strong>Durée:</strong> ${nights} nuit(s)</p>
+        <p><strong>Durée:</strong> ${units.label}</p>
       </div>
     </div>
 
     <!-- Apartments -->
     <p class="tbl-head">🏠 Appartement(s)</p>
     <table>
-      <thead><tr><th>Nom</th><th>Étage</th><th>Catégorie</th><th class="right">Prix/nuit</th><th class="right">Nuits</th><th class="right">Sous-total</th></tr></thead>
+      <thead><tr><th>Nom</th><th>Étage</th><th>Catégorie</th><th class="right">${units.priceHead}</th><th class="right">${units.countHead}</th><th class="right">Sous-total</th></tr></thead>
       <tbody>${roomRows}</tbody>
     </table>
 
@@ -272,9 +285,7 @@ function apartmentSection(data: AppData, roomId: string, title = '🏠 Apparteme
   const floor = data.floors.find((f) => f.id === room.floorId)?.name;
   const lines = [
     `<p><strong>${room.name}</strong></p>`,
-    room.wilaya && `<p><strong>Wilaya:</strong> ${room.wilaya}${room.commune ? ` · <strong>Commune:</strong> ${room.commune}` : ''}</p>`,
-    !room.wilaya && room.commune ? `<p><strong>Commune:</strong> ${room.commune}</p>` : '',
-    room.secteur && `<p><strong>Secteur:</strong> ${room.secteur}</p>`,
+    room.commune && `<p><strong>Commune:</strong> ${room.commune}</p>`,
     floor && `<p><strong>Étage:</strong> ${floor}</p>`,
     `<p><strong>Chambres:</strong> ${room.capacity}</p>`,
     room.description && `<p><strong>Description:</strong> ${room.description}</p>`,
@@ -474,7 +485,7 @@ export function buildReservationPaymentReceiptHTML(
         <p><strong>Appartement(s):</strong> ${roomsList || '—'}</p>
         <p><strong>Arrivée:</strong> ${formatDate(r.checkIn)} à ${r.checkInTime}</p>
         <p><strong>Départ:</strong> ${formatDate(r.checkOut)} à ${r.checkOutTime}</p>
-        <p><strong>Durée:</strong> ${nightsBetween(r.checkIn, r.checkOut)} nuit(s)</p>
+        <p><strong>Durée:</strong> ${rentalUnitsOf(r).label}</p>
       </div>
     </div>
     ${paymentsTable(r.payments)}`;
@@ -537,21 +548,21 @@ export function buildMediatorPaymentReceiptHTML(
 
 export function buildRentalContractHTML(data: AppData, r: Reservation, store: StoreInfo): string {
   const client = clientById(data, r.clientId);
-  const nights = nightsBetween(r.checkIn, r.checkOut);
+  const units = rentalUnitsOf(r);
   const paid = reservationPaid(r);
   const remaining = reservationRemaining(r);
 
   const roomRows = r.rooms.map((rr) => {
     const room = data.rooms.find((x) => x.id === rr.roomId);
     const floor = room ? (data.floors.find((f) => f.id === room.floorId)?.name ?? '—') : '—';
-    const loc = room ? [room.wilaya, room.commune, room.secteur].filter(Boolean).join(', ') : '';
+    const loc = room?.commune ?? '';
     return `<tr>
       <td>${room?.name ?? '—'}</td>
       <td>${loc || '—'}</td>
       <td>${floor}</td>
       <td class="right">${formatDA(rr.pricePerNight)}</td>
-      <td class="right">${nights}</td>
-      <td class="right">${formatDA(rr.pricePerNight * nights)}</td>
+      <td class="right">${units.countCell}</td>
+      <td class="right">${formatDA(Math.round(rr.pricePerNight * units.count))}</td>
     </tr>`;
   }).join('');
 
@@ -585,7 +596,7 @@ export function buildRentalContractHTML(data: AppData, r: Reservation, store: St
 
     <p class="tbl-head">🏠 Bien(s) loué(s)</p>
     <table>
-      <thead><tr><th>Appartement</th><th>Localisation</th><th>Étage</th><th class="right">Prix/nuit</th><th class="right">Nuits</th><th class="right">Sous-total</th></tr></thead>
+      <thead><tr><th>Appartement</th><th>Commune</th><th>Étage</th><th class="right">${units.priceHead}</th><th class="right">${units.countHead}</th><th class="right">Sous-total</th></tr></thead>
       <tbody>${roomRows}</tbody>
     </table>
 
@@ -594,7 +605,7 @@ export function buildRentalContractHTML(data: AppData, r: Reservation, store: St
         <h3>📅 Durée de la location</h3>
         <p><strong>Arrivée :</strong> ${formatDate(r.checkIn)} à ${r.checkInTime}</p>
         <p><strong>Départ :</strong> ${formatDate(r.checkOut)} à ${r.checkOutTime}</p>
-        <p><strong>Durée :</strong> ${nights} nuit(s)</p>
+        <p><strong>Durée :</strong> ${units.label}</p>
       </div>
       <div class="section blue">
         <h3>💰 Conditions financières</h3>
@@ -607,7 +618,7 @@ export function buildRentalContractHTML(data: AppData, r: Reservation, store: St
     <div class="clauses">
       <h4>Conditions générales</h4>
       <ol>
-        <li>La présente location est consentie pour la période du ${formatDate(r.checkIn)} au ${formatDate(r.checkOut)}, soit ${nights} nuit(s).</li>
+        <li>La présente location est consentie pour la période du ${formatDate(r.checkIn)} au ${formatDate(r.checkOut)}, soit ${units.label}.</li>
         <li>Le montant total de la location s'élève à ${formatDA(r.total)}, payable selon l'échéancier convenu entre les parties.</li>
         <li>Le locataire s'engage à occuper le bien loué paisiblement et à le restituer dans l'état où il l'a reçu.</li>
         <li>Toute prolongation au-delà de la date de départ pourra donner lieu à une facturation supplémentaire au tarif journalier en vigueur.</li>
@@ -633,7 +644,7 @@ export function buildVersementHTML(data: AppData, r: Reservation, store: StoreIn
   const client = clientById(data, r.clientId);
   const paid = reservationPaid(r);
   const remaining = reservationRemaining(r);
-  const nights = nightsBetween(r.checkIn, r.checkOut);
+  const units = rentalUnitsOf(r);
   const roomsList = r.rooms
     .map((rr) => data.rooms.find((x) => x.id === rr.roomId)?.name)
     .filter(Boolean)
@@ -661,7 +672,7 @@ export function buildVersementHTML(data: AppData, r: Reservation, store: StoreIn
         <h3>📋 Location ${r.code}</h3>
         <p><strong>Appartement(s) :</strong> ${roomsList || '—'}</p>
         <p><strong>Séjour :</strong> ${formatDate(r.checkIn)} → ${formatDate(r.checkOut)}</p>
-        <p><strong>Durée :</strong> ${nights} nuit(s)</p>
+        <p><strong>Durée :</strong> ${units.label}</p>
       </div>
     </div>
 
@@ -674,5 +685,125 @@ export function buildVersementHTML(data: AppData, r: Reservation, store: StoreIn
     </div>
 
     ${stampSection(store, 'client')}
+  </div>`;
+}
+
+// ─── État des dépenses ──────────────────────────────────────────────────────
+
+export interface ExpenseReportRow {
+  date: string;
+  name: string;
+  category: string;
+  description?: string;
+  amount: number;
+}
+
+/**
+ * État imprimable des dépenses sur une période, groupé par catégorie avec
+ * un total général.
+ */
+export function buildExpensesReportHTML(
+  rows: ExpenseReportRow[],
+  from: string,
+  to: string,
+  store: StoreInfo,
+): string {
+  const total = rows.reduce((s, r) => s + r.amount, 0);
+
+  const byCategory = new Map<string, number>();
+  for (const r of rows) byCategory.set(r.category, (byCategory.get(r.category) ?? 0) + r.amount);
+  const catRows = [...byCategory.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, amount]) => `<tr>
+      <td>${name}</td>
+      <td class="right">${((amount / (total || 1)) * 100).toFixed(1)} %</td>
+      <td class="right badge-debt">${formatDA(amount)}</td>
+    </tr>`).join('');
+
+  const detailRows = rows
+    .slice()
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((r) => `<tr>
+      <td>${formatDate(r.date)}</td>
+      <td>${r.name}</td>
+      <td>${r.category}</td>
+      <td>${r.description ?? '—'}</td>
+      <td class="right badge-debt">${formatDA(r.amount)}</td>
+    </tr>`).join('');
+
+  return `
+  <div class="doc">
+    ${docHeader(store, `${from} → ${to}`, `Édité le ${formatDate(new Date().toISOString().slice(0, 10))}`, 'État des dépenses')}
+
+    <div class="doc-title-band">
+      <h2>État des dépenses</h2>
+      <div class="sub">Période du ${formatDate(from)} au ${formatDate(to)} · ${rows.length} dépense(s)</div>
+    </div>
+
+    ${rows.length === 0 ? '<p style="text-align:center;padding:24px;color:#64748b">Aucune dépense sur cette période.</p>' : `
+      <p class="tbl-head">📊 Répartition par catégorie</p>
+      <table>
+        <thead><tr><th>Catégorie</th><th class="right">Part</th><th class="right">Montant</th></tr></thead>
+        <tbody>${catRows}</tbody>
+      </table>
+
+      <p class="tbl-head">🧾 Détail des dépenses</p>
+      <table>
+        <thead><tr><th>Date</th><th>Nom</th><th>Catégorie</th><th>Description</th><th class="right">Montant</th></tr></thead>
+        <tbody>${detailRows}</tbody>
+      </table>
+
+      <div class="totals-wrap">
+        <div class="row"><span>Nombre de dépenses</span><strong>${rows.length}</strong></div>
+        <div class="row grand"><span>Total des dépenses</span><span class="badge-debt">${formatDA(total)}</span></div>
+      </div>
+    `}
+
+    ${stampSection(store, 'agence')}
+  </div>`;
+}
+
+// ─── Calcul de zakat ────────────────────────────────────────────────────────
+
+export interface ZakatPrintStep {
+  label: string;
+  value: string;
+  strong?: boolean;
+}
+
+/** Document imprimable récapitulant un calcul de zakat commerciale. */
+export function buildZakatReportHTML(
+  steps: ZakatPrintStep[],
+  verdict: { due: boolean; message: string; amount: string },
+  periodLabel: string,
+  store: StoreInfo,
+): string {
+  const rows = steps.map((s) => `<tr>
+    <td${s.strong ? ' style="font-weight:800"' : ''}>${s.label}</td>
+    <td class="right"${s.strong ? ' style="font-weight:800"' : ''}>${s.value}</td>
+  </tr>`).join('');
+
+  return `
+  <div class="doc">
+    ${docHeader(store, 'ZAKAT', periodLabel, 'Calcul de zakat')}
+
+    <div class="doc-title-band">
+      <h2>Zakat commerciale — 2,5 %</h2>
+      <div class="sub">${periodLabel}</div>
+    </div>
+
+    <p class="tbl-head">🧮 Détail du calcul</p>
+    <table>
+      <thead><tr><th>Étape</th><th class="right">Valeur</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+
+    <div class="amount-hero"${verdict.due ? '' : ' style="border-color:#e2e8f0;background:#f8fafc"'}>
+      <div class="lbl"${verdict.due ? '' : ' style="color:#64748b"'}>Montant de la zakat</div>
+      <div class="val"${verdict.due ? '' : ' style="color:#64748b"'}>${verdict.amount}</div>
+      <div class="words">${verdict.message}</div>
+    </div>
+
+    ${stampSection(store, 'agence')}
   </div>`;
 }

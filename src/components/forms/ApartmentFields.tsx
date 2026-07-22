@@ -5,12 +5,10 @@ import { TextField, SelectField, TextArea } from '@/components/ui/Field';
 import type { Floor } from '@/types';
 
 /** Controlled draft for the shared apartment identity fields
- *  (nom, wilaya, commune, secteur, étage, nb chambres, description). */
+ *  (nom, commune, étage, nb chambres, description). */
 export interface AptDraft {
   name: string;
-  wilaya: string;
   commune: string;
-  secteur: string;
   floorId: string;
   capacity: string;
   description: string;
@@ -18,9 +16,7 @@ export interface AptDraft {
 
 export const emptyAptDraft: AptDraft = {
   name: '',
-  wilaya: '',
   commune: '',
-  secteur: '',
   floorId: '',
   capacity: '2',
   description: '',
@@ -47,9 +43,7 @@ export function ApartmentFields({
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <TextField label={t('rooms.roomName')} required value={draft.name} onChange={(e) => set('name', e.target.value)} />
-      <TextField label={t('apt.wilaya')} value={draft.wilaya} onChange={(e) => set('wilaya', e.target.value)} />
       <TextField label={t('apt.commune')} value={draft.commune} onChange={(e) => set('commune', e.target.value)} />
-      <TextField label={t('apt.secteur')} value={draft.secteur} onChange={(e) => set('secteur', e.target.value)} />
 
       <div>
         <SelectField label={t('apt.etage')} value={draft.floorId} onChange={(e) => set('floorId', e.target.value)}>

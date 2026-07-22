@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   TrendingUp, TrendingDown, Wallet, AlertCircle, Building2, CalendarCheck,
@@ -10,7 +11,7 @@ import { useAppData } from '@/store/hooks';
 import { useI18n } from '@/i18n';
 import {
   computeKpis, lastNMonths, monthLabel, revenueByMonth, reservationsByMonth,
-  occupancyByFloor, expensesByCategory, reservationRemaining,
+  occupancyByFloor, expensesByCategory, reservationRemaining, effectiveRoomStatus,
 } from '@/store/selectors';
 import { StatsCard } from '@/components/ui/StatsCard';
 import { SectionCard } from '@/components/ui/GradientCard';
@@ -21,9 +22,10 @@ import {
   buildAlertIndex, ALERT_META, ALERT_ORDER, alertTone, type ReservationAlertType,
 } from '@/components/reservations/reservationAlerts';
 import { staggerContainer, listItem } from '@/animations';
-import { formatDA, formatDate, clamp } from '@/lib/utils';
+import { formatDA, formatDate } from '@/lib/utils';
 import { useToday } from '@/lib/useToday';
-import { clientName, reservationRoomLabels, expenseCategoryName, clientById } from '@/lib/lookups';
+import { periodUnitLabel, rentalPeriodOf } from '@/lib/rental';
+import { clientName, reservationRoomLabels, expenseCategoryName, clientById, categoryName } from '@/lib/lookups';
 import { ResStatusBadge } from '@/components/ResStatusBadge';
 import type { Reservation } from '@/types';
 
@@ -66,6 +68,12 @@ export default function Dashboard() {
     [data.reservations, today],
   );
   const maintRooms = useMemo(() => data.rooms.filter((r) => r.status === 'maintenance'), [data.rooms]);
+
+  // Apartments that are free today (no maintenance, no reservation covering today).
+  const availableRooms = useMemo(
+    () => data.rooms.filter((r) => effectiveRoomStatus(r, data.reservations, today) === 'available'),
+    [data.rooms, data.reservations, today],
+  );
 
   const recentRes = data.reservations.slice(0, 5);
   const recentTx = data.cashTransactions.slice(0, 5);
@@ -188,6 +196,75 @@ export default function Dashboard() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Available apartments — what the agency can rent or sell right now */}
+      <SectionCard
+        title={`${t('dash.availableApartments')} (${availableRooms.length}/${data.rooms.length})`}
+        icon={<Building2 size={18} />}
+        className="mb-6"
+        action={
+          <Link to="/app/chambres" className="text-xs font-semibold text-brand-600 hover:text-brand-700">
+            {t('dash.seeAllApartments')} →
+          </Link>
+        }
+      >
+        <p className="mb-3 text-xs text-ink-muted">{t('dash.availableApartmentsHint')}</p>
+        {availableRooms.length === 0 ? (
+          <p className="py-4 text-center text-sm text-ink-secondary">{t('dash.noAvailableApartments')}</p>
+        ) : (
+          <motion.div
+            variants={staggerContainer}
+            initial="initial"
+            animate="animate"
+            className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5"
+          >
+            {availableRooms.map((room) => {
+              const isSale = (room.propertyType ?? 'rental') === 'sale';
+              const period = rentalPeriodOf(room);
+              return (
+                <motion.div
+                  key={room.id}
+                  variants={listItem}
+                  className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-ink-primary truncate">{room.name}</p>
+                      <p className="text-xs text-ink-muted truncate">
+                        {[categoryName(data, room.categoryId), room.commune].filter((v) => v && v !== '—').join(' · ') || '—'}
+                      </p>
+                    </div>
+                    <Badge tone="success">{t('rooms.available')}</Badge>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap gap-1">
+                      {isSale ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                          {t('apt.typeSale')}
+                        </span>
+                      ) : (
+                        <>
+                          <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+                            {period === 'month' ? t('apt.perMonth') : t('apt.perDay')}
+                          </span>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                            {room.furnished ? t('apt.furnished') : t('apt.notFurnished')}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <p className="shrink-0 text-sm font-extrabold text-emerald-700">
+                      {isSale
+                        ? (room.salePrice ? formatDA(room.salePrice) : '—')
+                        : `${formatDA(room.pricePerNight)} / ${periodUnitLabel(period, t)}`}
+                    </p>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </motion.div>
+        )}
+      </SectionCard>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">

@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   BarChart3, FileText, Printer, Sparkles, CalendarCheck, Users,
-  BedDouble, Wrench, TrendingDown, HardHat, Landmark, Tags, ShoppingBag, Handshake,
+  BedDouble, Wrench, TrendingDown, HardHat, Landmark, Tags, ShoppingBag, Handshake, Coins,
 } from 'lucide-react';
 import { useApp, useCurrentPermissions, can } from '@/store/appStore';
 import { useAppData } from '@/store/hooks';
@@ -51,9 +52,14 @@ export default function Reports() {
         title={t('reports.title')}
         subtitle={t('reports.subtitle')}
         actions={
-          report && can(perms, 'reports', 'print') && (
-            <GradientButton variant="glass" icon={<Printer size={18} />} onClick={print}>{t('reports.printReport')}</GradientButton>
-          )
+          <>
+            <Link to="/app/zakat">
+              <GradientButton variant="glass" icon={<Coins size={18} />}>{t('zakat.title')}</GradientButton>
+            </Link>
+            {report && can(perms, 'reports', 'print') && (
+              <GradientButton variant="glass" icon={<Printer size={18} />} onClick={print}>{t('reports.printReport')}</GradientButton>
+            )}
+          </>
         }
       />
 

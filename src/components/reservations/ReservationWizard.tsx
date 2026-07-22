@@ -14,7 +14,8 @@ import { TextField } from '@/components/ui/Field';
 import { ClientForm } from '@/components/forms/ClientForm';
 import { ResStatusBadge } from '@/components/ResStatusBadge';
 import { reservationPaid } from '@/store/selectors';
-import { cn, formatDA, nightsBetween, todayISO, initials } from '@/lib/utils';
+import { cn, formatDA, formatMonths, monthsBetween, nightsBetween, todayISO, initials } from '@/lib/utils';
+import { periodUnitLabel, rentalPeriodOf, rentalUnits } from '@/lib/rental';
 import type { Reservation, ReservationService, ReservationStatus } from '@/types';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -211,6 +212,67 @@ function ApartmentCalendar({
   );
 }
 
+// ─── MonthlyDateRange ─────────────────────────────────────────────────────────
+//
+// Location au mois : pas de grille calendrier, l'utilisateur saisit simplement
+// la date de début et la date de fin.
+
+function MonthlyDateRange({
+  checkIn, checkOut, onChange,
+}: {
+  checkIn: string;
+  checkOut: string;
+  onChange: (checkIn: string, checkOut: string) => void;
+}) {
+  const { t } = useI18n();
+  const months = checkIn && checkOut ? monthsBetween(checkIn, checkOut) : 0;
+  const invalid = !!checkIn && !!checkOut && checkOut <= checkIn;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start gap-2.5 rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-2.5">
+        <CalendarDays size={16} className="mt-0.5 shrink-0 text-violet-600" />
+        <div>
+          <p className="text-xs font-bold text-violet-700">{t('res.monthlyTitle')}</p>
+          <p className="text-[11px] leading-snug text-violet-600">{t('res.monthlyHint')}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <TextField
+          label={t('res.startDate')}
+          type="date"
+          value={checkIn}
+          onChange={(e) => onChange(e.target.value, checkOut)}
+        />
+        <TextField
+          label={t('res.endDate')}
+          type="date"
+          value={checkOut}
+          min={checkIn || undefined}
+          onChange={(e) => onChange(checkIn, e.target.value)}
+        />
+      </div>
+
+      {invalid && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+          <AlertTriangle size={13} className="shrink-0" /> {t('res.monthlyInvalid')}
+        </div>
+      )}
+
+      {months > 0 && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#4c1d95] via-[#6d28d9] to-[#0891b2] py-2.5 text-sm font-bold text-white shadow-glow"
+        >
+          <CalendarDays size={15} /> {t('res.monthsSelected', { months: formatMonths(months) })}
+        </motion.div>
+      )}
+    </div>
+  );
+}
+
 // ─── Back button (always visible) ─────────────────────────────────────────────
 
 function BackButton({ onClick, disabled }: { onClick: () => void; disabled: boolean }) {
@@ -303,12 +365,25 @@ export function ReservationWizard({
   // ── Derived values ────────────────────────────────────────────────────────
   const nights = checkIn && checkOut ? nightsBetween(checkIn, checkOut) : 0;
 
+  // L'appartement piloté par l'étape « Calendrier » impose le mode de saisie
+  // des dates : calendrier (journée) ou champs date simples (mois).
+  const calendarRoom = useMemo(
+    () => data.rooms.find(r => r.id === calendarRoomId),
+    [data.rooms, calendarRoomId],
+  );
+  const period = rentalPeriodOf(calendarRoom);
+  const isMonthly = period === 'month';
+  const months = checkIn && checkOut ? monthsBetween(checkIn, checkOut) : 0;
+
+  // Chaque appartement est facturé selon SA propre périodicité : une sélection
+  // mixte (journée + mois) reste donc correcte.
   const roomsTotal = useMemo(() =>
     roomIds.reduce((sum, id) => {
-      const r = data.rooms.find(r => r.id === id);
-      return sum + (r ? r.pricePerNight * nights : 0);
+      const r = data.rooms.find(x => x.id === id);
+      if (!r || !checkIn || !checkOut) return sum;
+      return sum + r.pricePerNight * rentalUnits(rentalPeriodOf(r), checkIn, checkOut);
     }, 0),
-    [roomIds, data.rooms, nights]);
+    [roomIds, data.rooms, checkIn, checkOut]);
 
   const servicesTotal = useMemo(() =>
     Object.entries(services).reduce((sum, [id, qty]) => {
@@ -317,7 +392,7 @@ export function ReservationWizard({
     }, 0),
     [services, data.services]);
 
-  const computedTotal = roomsTotal + servicesTotal;
+  const computedTotal = Math.round(roomsTotal + servicesTotal);
   const finalTotal    = editedTotal === '' ? computedTotal : Number(editedTotal);
   const alreadyPaid   = editing ? reservationPaid(editing) : 0;
   const paidNum       = amountPaid === '' ? (editing ? alreadyPaid : finalTotal) : Number(amountPaid);
@@ -377,6 +452,9 @@ export function ReservationWizard({
       const room = data.rooms.find(r => r.id === id)!;
       return { roomId: id, pricePerNight: room.pricePerNight };
     });
+    // Périodicité facturée : celle de l'appartement principal de la sélection.
+    const resPeriod = rentalPeriodOf(data.rooms.find(r => r.id === (calendarRoomId || roomIds[0])));
+    const resMonths = resPeriod === 'month' ? monthsBetween(checkIn, checkOut) : undefined;
     const resServices: ReservationService[] = Object.entries(services)
       .filter(([, qty]) => qty > 0)
       .map(([id, qty]) => {
@@ -395,6 +473,7 @@ export function ReservationWizard({
       const patch: Partial<Reservation> = {
         clientId, rooms: resRooms, services: resServices, checkIn, checkOut,
         checkInTime, checkOutTime, nights, total: finalTotal,
+        rentalPeriod: resPeriod, months: resMonths,
         notes: notes.trim() || undefined,
       };
       // Only touch the payment set when the amount paid actually changed. A
@@ -414,6 +493,7 @@ export function ReservationWizard({
       await addReservation({
         clientId, rooms: resRooms, services: resServices, checkIn, checkOut,
         checkInTime, checkOutTime, nights, total: finalTotal,
+        rentalPeriod: resPeriod, months: resMonths,
         payments: paidNum > 0 ? [{ id: `pay-${Date.now()}`, amount: paidNum, date: today, note: 'Paiement initial' }] : [],
         status,
         notes: notes.trim() || undefined,
@@ -509,7 +589,12 @@ export function ReservationWizard({
                         {roomIds.map(id => data.rooms.find(r => r.id === id)?.name).filter(Boolean).join(', ')}
                       </p>
                       {checkIn && checkOut && (
-                        <p className="text-ink-muted">{checkIn} → {checkOut} · <span className="font-medium text-brand-600">{nights}n</span></p>
+                        <p className="text-ink-muted">
+                          {checkIn} → {checkOut} ·{' '}
+                          <span className="font-medium text-brand-600">
+                            {isMonthly ? `${formatMonths(months)} ${t('common.monthUnit')}` : `${nights}n`}
+                          </span>
+                        </p>
                       )}
                     </div>
                   )}
@@ -604,7 +689,9 @@ export function ReservationWizard({
                                       : 'border-slate-200 text-ink-secondary hover:border-brand-300 hover:bg-brand-50',
                                   )}
                                 >
-                                  {r.name} {isMaint && '(Maint.)'}
+                                  {r.name}
+                                  <span className="ms-1 opacity-70">· {periodUnitLabel(rentalPeriodOf(r), t)}</span>
+                                  {isMaint && ' (Maint.)'}
                                 </button>
                               );
                             })}
@@ -635,16 +722,24 @@ export function ReservationWizard({
                           )}
                         </div>
 
-                        {/* Calendar */}
+                        {/* Dates — plain date fields for monthly rentals, calendar otherwise */}
                         {calendarRoomId && (
                           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-                            <ApartmentCalendar
-                              checkIn={checkIn} checkOut={checkOut}
-                              onSelect={(ci, co) => { setCheckIn(ci); setCheckOut(co); }}
-                              roomId={calendarRoomId}
-                              existingReservations={data.reservations}
-                              editingId={editing?.id}
-                            />
+                            {isMonthly ? (
+                              <MonthlyDateRange
+                                checkIn={checkIn}
+                                checkOut={checkOut}
+                                onChange={(ci, co) => { setCheckIn(ci); setCheckOut(co); }}
+                              />
+                            ) : (
+                              <ApartmentCalendar
+                                checkIn={checkIn} checkOut={checkOut}
+                                onSelect={(ci, co) => { setCheckIn(ci); setCheckOut(co); }}
+                                roomId={calendarRoomId}
+                                existingReservations={data.reservations}
+                                editingId={editing?.id}
+                              />
+                            )}
                             {hasConflict && (
                               <div className="flex items-center gap-2 rounded-xl bg-rose-50 border border-rose-200 px-3.5 py-2.5 text-rose-700 text-xs font-semibold">
                                 <AlertTriangle size={15} className="shrink-0 text-rose-500" />
@@ -836,7 +931,9 @@ export function ReservationWizard({
                                   {cat && <span className="text-ink-muted text-xs"> · {cat.name}</span>}
                                   {floor && <span className="text-ink-muted text-xs"> · {floor.name}</span>}
                                 </div>
-                                <span className="font-medium text-ink-secondary">{formatDA(room.pricePerNight)}/nuit</span>
+                                <span className="font-medium text-ink-secondary">
+                                  {formatDA(room.pricePerNight)}/{periodUnitLabel(rentalPeriodOf(room), t)}
+                                </span>
                               </div>
                             );
                           })}
@@ -846,7 +943,11 @@ export function ReservationWizard({
                         <SummaryCard icon={<CalendarDays size={16} />} title="Dates" color="emerald">
                           <div className="flex items-center justify-between text-sm">
                             <span className="text-ink-secondary">{checkIn} → {checkOut}</span>
-                            <span className="font-bold text-emerald-700">{nights} nuit{nights > 1 ? 's' : ''}</span>
+                            <span className="font-bold text-emerald-700">
+                              {isMonthly
+                                ? `${formatMonths(months)} ${months > 1 ? t('common.months') : t('common.monthUnit')}`
+                                : `${nights} ${nights > 1 ? t('common.nights') : t('common.night')}`}
+                            </span>
                           </div>
                           <p className="text-xs text-ink-muted mt-0.5">Arrivée {checkInTime} · Départ {checkOutTime}</p>
                         </SummaryCard>
@@ -882,8 +983,12 @@ export function ReservationWizard({
                           </div>
                           <div className="p-5 space-y-3">
                             <div className="flex justify-between text-sm text-ink-secondary">
-                              <span>{nights} nuit{nights > 1 ? 's' : ''}</span>
-                              <span>{formatDA(roomsTotal)}</span>
+                              <span>
+                                {isMonthly
+                                  ? `${formatMonths(months)} ${months > 1 ? t('common.months') : t('common.monthUnit')}`
+                                  : `${nights} ${nights > 1 ? t('common.nights') : t('common.night')}`}
+                              </span>
+                              <span>{formatDA(Math.round(roomsTotal))}</span>
                             </div>
                             {servicesTotal > 0 && (
                               <div className="flex justify-between text-sm text-ink-secondary">

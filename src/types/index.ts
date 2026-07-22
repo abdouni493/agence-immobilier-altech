@@ -27,6 +27,7 @@ export type ModuleKey =
   | 'expenses'
   | 'caisse'
   | 'reports'
+  | 'zakat'
   | 'settings';
 
 export type ActionKey = 'view' | 'create' | 'edit' | 'delete' | 'print' | 'pay';
@@ -62,6 +63,8 @@ export interface Client {
 // ============ ROOMS ============
 export type RoomStatus = 'available' | 'occupied' | 'maintenance';
 export type PropertyType = 'rental' | 'sale';
+/** Unité de facturation d'une location : à la journée ou au mois. */
+export type RentalPeriod = 'day' | 'month';
 
 export interface Floor {
   id: string;
@@ -79,15 +82,17 @@ export interface Room {
   capacity: number; // nombre de chambres
   floorId: string;
   categoryId: string;
+  /** Prix d'une unité de location : par jour ou par mois selon `rentalPeriod`. */
   pricePerNight: number;
   status: RoomStatus;
   maintenanceNote?: string;
   // Fiche appartement (agence immobilière)
-  wilaya?: string;
   commune?: string;
-  secteur?: string;
   description?: string;
   propertyType?: PropertyType; // location (rental) ou vente (sale)
+  rentalPeriod?: RentalPeriod; // location à la journée (défaut) ou au mois
+  furnished?: boolean; // meublé / non meublé
+  furnitureDescription?: string; // détail des meubles si `furnished`
   ownerClientId?: string; // client qui a confié / vendu cet appartement à l'agence
   ownerName?: string; // nom complet du propriétaire (optionnel, saisie libre)
   ownerPhone?: string; // téléphone du propriétaire (optionnel, saisie libre)
@@ -145,6 +150,10 @@ export interface Reservation {
   checkInTime: string; // HH:MM
   checkOutTime: string; // HH:MM
   nights: number;
+  /** Unité facturée : 'day' (défaut) ou 'month'. */
+  rentalPeriod?: RentalPeriod;
+  /** Nombre de mois facturés lorsque `rentalPeriod === 'month'`. */
+  months?: number;
   total: number; // editable total
   payments: Payment[];
   status: ReservationStatus;
@@ -171,6 +180,8 @@ export interface Mediator {
   city?: string;
   cin?: string;
   notes?: string;
+  /** Employé (rôle « Médiateur ») dont cette fiche médiateur est issue. */
+  workerId?: string;
   payments: MediatorPayment[];
   createdAt: string;
 }
